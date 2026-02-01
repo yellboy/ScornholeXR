@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: LargeLanguageModels_OpenAI_ProviderProfile
   m_EditorClassIdentifier: Meta.XR.BuildingBlocks.AIBlocks::Meta.XR.BuildingBlocks.AIBlocks.OpenAIProvider
   supportedInferenceTypes: 1
-  apiKey:
+  apiKey: 
   apiRoot: https://api.openai.com/v1/responses
   model: gpt-4o-mini
   supportsVision: 1

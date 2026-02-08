@@ -4,13 +4,13 @@ namespace Assets.Scripts
 {
     public class Round
     {
-        private readonly TaskObject _task;
+        public TaskObject Task { get; private set; }
         public int Points { get; private set; } = 0;
         public int ThrowCount { get; private set; } = 0;
 
         public Round(TaskObject task)
         {
-            _task = task;
+            Task = task;
         }
 
         public void ThrowMade(int thrownOption, ThrowResult throwResult)
@@ -35,7 +35,7 @@ namespace Assets.Scripts
 
         private void AddOptionPoints(int thrownOption)
         {
-            var rank = Array.IndexOf(_task.Rank, thrownOption);
+            var rank = Array.IndexOf(Task.Rank, thrownOption);
             var pointsFromOption = 5 - rank;
             Points += pointsFromOption;
         }

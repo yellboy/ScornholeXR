@@ -76,9 +76,19 @@ namespace Assets.Scripts
 
         private void OnThrown(Cornbag cornbag)
         {
-            _thrownCornbags.Add(cornbag);
             ReSpawn(cornbag);
             Thrown?.Invoke(cornbag);
+
+            if (cornbag.Result == ThrowResult.HoleHit)
+            {
+                // Destroy if it is in the hole, so that it doesn't block other cornbags from going in.
+                Destroy(cornbag.gameObject);
+            }
+            else
+            {
+                // Add to the list of thrown cornbags, so that it can be destroyed when Reset is called.
+                _thrownCornbags.Add(cornbag);
+            }
         }
 
         private void ReSpawn(Cornbag cornbag)

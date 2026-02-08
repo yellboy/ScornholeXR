@@ -1,4 +1,6 @@
-﻿public class TaskObject
+﻿using System;
+
+public class TaskObject
 {
     public string Question { get; set; }
 

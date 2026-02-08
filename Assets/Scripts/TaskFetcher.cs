@@ -11,8 +11,6 @@ public class TaskFetcher : MonoBehaviour
 
     [SerializeField] private LlmAgent _llmAgent;
 
-    [SerializeField] private TMP_Text _queryText;
-
     private IList<TaskObject> _previousTasks = new List<TaskObject>();
 
     public Action<TaskObject> TaskReceived;
@@ -63,14 +61,6 @@ Always provide only a task and nothing else.";
 
         var jsonTask = lastResponse.Replace("Assistant:", "");
         var task = JsonConvert.DeserializeObject<TaskObject>(jsonTask);
-
-        _queryText.text = 
-@$"{task.Question}
-1. {task.Option1}
-2. {task.Option2}
-3. {task.Option3}
-4. {task.Option4}
-5. {task.Option5}";
 
         _previousTasks.Add(task);
 

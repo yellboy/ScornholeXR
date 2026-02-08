@@ -5,7 +5,7 @@ namespace Assets.Scripts
     public class GameController : MonoBehaviour
     {
         [SerializeField] private TaskFetcher _taskFetcher;
-        [SerializeField] private ScoreDisplay _scoreDisplay;
+        [SerializeField] private MainDisplay _mainDisplay;
         [SerializeField] private CornbagsController _cornbagsController;
 
         private Round _currentRound;
@@ -26,6 +26,7 @@ namespace Assets.Scripts
         private void OnTaskReceived(TaskObject taskObject)
         {
             _currentRound = new Round(taskObject);
+            _mainDisplay.ShowTask(taskObject);
         }
 
         private void OnCornbagThrown(Cornbag cornbag)
@@ -48,8 +49,13 @@ namespace Assets.Scripts
             }
 
             _totalPoints += _currentRound.Points;
-            _scoreDisplay.UpdateRoundPoints((_currentRound.Points));
-            _scoreDisplay.UpdateTotalPoints(_totalPoints);
+            _mainDisplay.ShowRoundPoints(_currentRound.Points);
+            _mainDisplay.UpdateTotalPoints(_totalPoints);
+            _mainDisplay.ShowAnswer(_currentRound.Task);
+        }
+
+        public void StartRound()
+        {
             _cornbagsController.Reset();
             _taskFetcher.FetchTask();
         }

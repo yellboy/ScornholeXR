@@ -1,6 +1,8 @@
 using Meta.XR.BuildingBlocks.AIBlocks;
-using System.Linq;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using UnityEngine;
 
@@ -11,12 +13,16 @@ public class TaskFetcher : MonoBehaviour
 
     [SerializeField] private TMP_Text _queryText;
 
+    private IList<TaskObject> _previousTasks = new List<TaskObject>();
+
+    public Action<TaskObject> TaskReceived;
+
     private void Start()
     {
         FetchTask();
     }
 
-    private void FetchTask()
+    public void FetchTask()
     {
         var prompt = @"
 I want to simulate a scornhole game from Good Mythical Morning. You need to send me a randomized task in JSON format. 
@@ -41,6 +47,9 @@ In the example above, barbeque sauce is the least popular condiment, followed by
 Answer only with the task in the format I described and nothing else.
 Always provide only a task and nothing else.";
 
+        var previousTasksJson = JsonConvert.SerializeObject(_previousTasks);
+        prompt += $"The task should be different than all the previous task. Previous tasks: {previousTasksJson}";
+
         _llmAgent.SendPromptAsync(prompt);
     }
 
@@ -62,5 +71,9 @@ Always provide only a task and nothing else.";
 3. {task.Option3}
 4. {task.Option4}
 5. {task.Option5}";
+
+        _previousTasks.Add(task);
+
+        TaskReceived?.Invoke(task);
     }
 }

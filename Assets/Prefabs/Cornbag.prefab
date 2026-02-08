@@ -677,12 +677,10 @@ GameObject:
   - component: {fileID: 3988337505697317439}
   - component: {fileID: 2164009564637254670}
   - component: {fileID: 3455106685037764839}
-  - component: {fileID: 3889765548342323696}
   - component: {fileID: 418038112517451033}
-  - component: {fileID: 8087144957028900559}
   m_Layer: 0
   m_Name: Cornbag
-  m_TagString: Untagged
+  m_TagString: Cornbag
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -868,18 +866,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Assets.Scripts.CornBagThrowEnabler
   _rigidbody: {fileID: 7413013272556516894}
   _grabbable: {fileID: 7629525112300442159}
---- !u!114 &3889765548342323696
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7466696114328803530}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 46d8e016bb9339341bf785d7e05709ca, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Assets.Scripts.CollisionHandler
 --- !u!114 &418038112517451033
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -892,20 +878,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4ec005215476d544e82f57a7bd97f2e9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Assets.Scripts.Cornbag
-  _collisionHandler: {fileID: 3889765548342323696}
   _index: 3
---- !u!114 &8087144957028900559
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7466696114328803530}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 46d8e016bb9339341bf785d7e05709ca, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Assets.Scripts.CollisionHandler
 --- !u!1 &7478168054959683970
 GameObject:
   m_ObjectHideFlags: 0

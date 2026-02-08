@@ -6,12 +6,47 @@ namespace Assets.Scripts
     public class Cornbag : MonoBehaviour
     {
         [SerializeField] private int _index;
+        private bool _resolved;
 
-        public event Action<Cornbag> HitBoard;
-        public event Action<Cornbag> HitFloor;
-        public event Action<Cornbag> HitHole;
+        private bool _hitBoard;
+        private bool _hitFloor;
+        private bool _hitHole;
+
+        public event Action<Cornbag> Thrown;
 
         public int Index => _index;
+
+        public ThrowResult? Result { get; private set; }
+
+        private void FixedUpdate()
+        {
+            if (_resolved)
+            {
+                return;
+            }
+
+            if (!(_hitHole || _hitBoard || _hitFloor))
+            {
+                return;
+            }
+
+            if (_hitHole)
+            {
+                Result = ThrowResult.HoleHit;
+            }
+            else if (_hitBoard)
+            {
+                Result = ThrowResult.BoardHit;
+            }
+            else if (_hitFloor)
+            {
+                Result = ThrowResult.Missed;
+            }
+
+            Thrown?.Invoke(this);
+
+            _resolved = true;
+        }
 
         private void OnCollisionEnter(Collision other)
         {
@@ -19,13 +54,29 @@ namespace Assets.Scripts
             switch (other.gameObject.tag)
             {
                 case "Board":
-                    HitBoard?.Invoke(this);
+                    _hitBoard = true;
                     break;
                 case "Floor":
-                    HitFloor?.Invoke(this);
+                    _hitFloor = true;
                     break;
                 case "Hole":
-                    HitHole?.Invoke(this);
+                    _hitHole = true;
+                    break;
+                case "Cornbag":
+                    var otherCornbag = other.gameObject.GetComponent<Cornbag>();
+                    switch (otherCornbag.Result)
+                    {
+                        case ThrowResult.BoardHit:
+                            _hitHole = true;
+                            break;
+                        case ThrowResult.Missed:
+                            _hitFloor = true;
+                            break;
+                        case ThrowResult.HoleHit:
+                            _hitHole = true;
+                            break;
+                    }
+
                     break;
                 default:
                     Debug.Log($"Collided with something else: {other.gameObject.tag}");

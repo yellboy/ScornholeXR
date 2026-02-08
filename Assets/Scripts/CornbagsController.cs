@@ -4,8 +4,10 @@ using UnityEngine;
 
 namespace Assets.Scripts
 {
-    public class CornbagsLifecycleController : MonoBehaviour
+    public class CornbagsController : MonoBehaviour
     {
+        public event Action<Cornbag> Thrown;
+
         [Serializable]
         private class CornbagWithInitializationDetails 
         {
@@ -15,6 +17,20 @@ namespace Assets.Scripts
         }
 
         [SerializeField] private List<CornbagWithInitializationDetails> _cornbagInitializationDetails;
+        private IList<Cornbag> _thrownCornbags = new List<Cornbag>();
+
+        public void Reset()
+        {
+            foreach (var cornbag in _thrownCornbags)
+            {
+                if (cornbag != null)
+                {
+                    Destroy(cornbag.gameObject);
+                }
+            }
+
+            _thrownCornbags.Clear();
+        }
 
         private void OnEnable()
         {
@@ -33,18 +49,16 @@ namespace Assets.Scripts
                 return;
             }
 
-            cornbag.HitBoard += ReSpawn;
-            cornbag.HitHole += ReSpawn;
-            cornbag.HitFloor += ReSpawn;
+            cornbag.Thrown += OnThrown;
 
             Debug.Log($"Subscribed to {gameObject.name}");
         }
 
         private void OnDisable()
         {
-            foreach (GameObject child in transform)
+            foreach (Transform child in transform)
             {
-                Unsubscribe(child);
+                Unsubscribe(child.gameObject);
             }
         }
 
@@ -57,9 +71,14 @@ namespace Assets.Scripts
                 return;
             }
 
-            cornbag.HitBoard -= ReSpawn;
-            cornbag.HitHole -= ReSpawn;
-            cornbag.HitFloor -= ReSpawn;
+            cornbag.Thrown -= OnThrown;
+        }
+
+        private void OnThrown(Cornbag cornbag)
+        {
+            _thrownCornbags.Add(cornbag);
+            ReSpawn(cornbag);
+            Thrown?.Invoke(cornbag);
         }
 
         private void ReSpawn(Cornbag cornbag)

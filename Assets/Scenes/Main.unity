@@ -459,7 +459,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Next roudn
+  m_text: Next round
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -5786,7 +5786,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3149096992409217204, guid: b38be3d6ff53b464eb83096b65f569ac, type: 3}
       propertyPath: m_Size.z
-      value: 1.46
+      value: 1.10794
+      objectReference: {fileID: 0}
+    - target: {fileID: 3149096992409217204, guid: b38be3d6ff53b464eb83096b65f569ac, type: 3}
+      propertyPath: m_Center.z
+      value: 0.17603004
       objectReference: {fileID: 0}
     - target: {fileID: 4849926354897958447, guid: b38be3d6ff53b464eb83096b65f569ac, type: 3}
       propertyPath: m_TagString

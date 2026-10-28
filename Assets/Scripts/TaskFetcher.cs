@@ -15,11 +15,6 @@ public class TaskFetcher : MonoBehaviour
 
     public Action<TaskObject> TaskReceived;
 
-    private void Start()
-    {
-        FetchTask();
-    }
-
     public void FetchTask()
     {
         var prompt = @"

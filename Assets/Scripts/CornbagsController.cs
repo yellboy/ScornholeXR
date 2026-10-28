@@ -18,6 +18,17 @@ namespace Assets.Scripts
 
         [SerializeField] private List<CornbagWithInitializationDetails> _cornbagInitializationDetails;
         private IList<Cornbag> _thrownCornbags = new List<Cornbag>();
+        private bool _throwingEnabled;
+
+        public void SetThrowingEnabled(bool throwingEnabled)
+        {
+            _throwingEnabled = throwingEnabled;
+
+            foreach (Transform child in transform)
+            {
+                SetThrowingEnabled(child.gameObject);
+            }
+        }
 
         public void Reset()
         {
@@ -50,8 +61,19 @@ namespace Assets.Scripts
             }
 
             cornbag.Thrown += OnThrown;
+            SetThrowingEnabled(gameObject);
 
             Debug.Log($"Subscribed to {gameObject.name}");
+        }
+
+        private void SetThrowingEnabled(GameObject gameObject)
+        {
+            var cornbag = gameObject.GetComponent<Cornbag>();
+            var throwEnabler = gameObject.GetComponent<CornBagThrowEnabler>();
+            if (cornbag != null && throwEnabler != null)
+            {
+                throwEnabler.SetCanThrow(_throwingEnabled && !cornbag.IsResolved);
+            }
         }
 
         private void OnDisable()

@@ -16,6 +16,52 @@ namespace Assets.Scripts
         [SerializeField] private GameObject _roundPanel;
         [SerializeField] private GameObject _roundFinishedPanel;
 
+        public void ShowStatus(string status)
+        {
+            _roundPanel.SetActive(true);
+            _roundFinishedPanel.SetActive(false);
+            _queryText.text = status;
+            _roundPointsText.text = string.Empty;
+        }
+
+        public void ShowGameState(GameSnapshot snapshot, int localPlayer)
+        {
+            ShowTask(snapshot.Task);
+            _roundPointsText.text =
+                $"Round {snapshot.RoundNumber}/5\n" +
+                $"You are Player {localPlayer}\n" +
+                $"Player {snapshot.ActivePlayer}'s turn\n" +
+                $"Round score: P1 {snapshot.PlayerOneRoundPoints} - P2 {snapshot.PlayerTwoRoundPoints}";
+            UpdateScoreboard(snapshot);
+        }
+
+        public void ShowRoundResults(GameSnapshot snapshot)
+        {
+            ShowAnswer(snapshot.Task);
+            _roundPointsText.text =
+                $"Round {snapshot.RoundNumber} complete\n" +
+                $"Player 1: {snapshot.PlayerOneRoundPoints} points\n" +
+                $"Player 2: {snapshot.PlayerTwoRoundPoints} points";
+            UpdateScoreboard(snapshot);
+        }
+
+        public void ShowGameResults(GameSnapshot snapshot)
+        {
+            ShowRoundResults(snapshot);
+
+            var result = snapshot.PlayerOneTotalPoints == snapshot.PlayerTwoTotalPoints
+                ? "The game is a tie!"
+                : $"Player {(snapshot.PlayerOneTotalPoints > snapshot.PlayerTwoTotalPoints ? 1 : 2)} wins!";
+
+            _roundPointsText.text = $"Game complete\n{result}";
+        }
+
+        private void UpdateScoreboard(GameSnapshot snapshot)
+        {
+            _totalPointsText.text =
+                $"Total: P1 {snapshot.PlayerOneTotalPoints} - P2 {snapshot.PlayerTwoTotalPoints}\n" +
+                $"Throws: P1 {snapshot.PlayerOneThrows}/5 - P2 {snapshot.PlayerTwoThrows}/5";
+        }
 
         public void ShowRoundPoints(int points)
         {

@@ -18,6 +18,11 @@ namespace Assets.Scripts
             _rigidbody.isKinematic = false;
         }
 
+        public void SetCanThrow(bool canThrow)
+        {
+            _grabbable.enabled = canThrow;
+        }
+
         private void OnDisable()
         {
             _grabbable.VelocityThrow.WhenThrown -= OnThrown;

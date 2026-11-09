@@ -12,12 +12,20 @@ namespace Assets.Scripts
     {
         private const string ThrowMessageType = "throw";
         private const string SnapshotMessageType = "snapshot";
+        private const int MaximumThrowSendAttempts = 5;
+        private const float ThrowRetryInterval = 0.75f;
 
-        [SerializeField] private string _roomName = "scornhole-main";
+        [SerializeField] private string _roomName = "scornhole-main-v2";
 
         private readonly List<PlayerRef> _players = new List<PlayerRef>(2);
         private NetworkRunner _runner;
         private PlayerRef _authorityPlayer = PlayerRef.None;
+        private int _nextMessageId;
+        private WireMessage _pendingThrow;
+        private int _pendingThrowCount;
+        private int _throwSendAttempts;
+        private float _nextThrowRetryTime;
+        private GameSnapshot _lastSnapshot;
 
         public event Action SessionReady;
         public event Action<int, int, ThrowResult> ThrowReceived;
@@ -48,12 +56,33 @@ namespace Assets.Scripts
             }
         }
 
+        private void Update()
+        {
+            if (_pendingThrow == null || Time.unscaledTime < _nextThrowRetryTime)
+            {
+                return;
+            }
+
+            if (_throwSendAttempts >= MaximumThrowSendAttempts)
+            {
+                Debug.LogError(
+                    $"Player {LocalPlayerNumber}'s throw was not acknowledged after {_throwSendAttempts} attempts");
+                _pendingThrow = null;
+                return;
+            }
+
+            SendPendingThrow();
+        }
+
         public void SubmitThrow(int option, ThrowResult result)
         {
             if (!IsReady || LocalPlayerNumber == 0)
             {
+                Debug.LogWarning($"Throw ignored locally: ready={IsReady}, player={LocalPlayerNumber}");
                 return;
             }
+
+            Debug.Log($"Player {LocalPlayerNumber} submitted option {option} with result {result}");
 
             if (IsAuthority)
             {
@@ -61,12 +90,16 @@ namespace Assets.Scripts
                 return;
             }
 
-            Send(_authorityPlayer, new WireMessage
+            _pendingThrowCount = GetLocalThrowCount(_lastSnapshot);
+            _pendingThrow = new WireMessage
             {
                 Type = ThrowMessageType,
+                SenderRef = _runner.LocalPlayer.RawEncoded,
                 Option = option,
                 Result = result
-            });
+            };
+            _throwSendAttempts = 0;
+            SendPendingThrow();
         }
 
         public void BroadcastSnapshot(GameSnapshot snapshot)
@@ -85,6 +118,7 @@ namespace Assets.Scripts
                     Send(player, new WireMessage
                     {
                         Type = SnapshotMessageType,
+                        SenderRef = _runner.LocalPlayer.RawEncoded,
                         Snapshot = snapshot
                     });
                 }
@@ -134,17 +168,75 @@ namespace Assets.Scripts
 
             if (message.Type == ThrowMessageType && IsAuthority)
             {
-                ThrowReceived?.Invoke(GetPlayerNumber(player), message.Option, message.Result);
+                var sender = PlayerRef.FromEncoded(message.SenderRef);
+                var playerNumber = GetPlayerNumber(sender);
+                Debug.Log($"Authority received throw from player {playerNumber}: option {message.Option}, result {message.Result}");
+                ThrowReceived?.Invoke(playerNumber, message.Option, message.Result);
                 return;
             }
 
             if (message.Type == SnapshotMessageType && !IsAuthority && message.Snapshot != null)
             {
-                _authorityPlayer = player;
                 ApplyPlayerAssignment(message.Snapshot);
+                _authorityPlayer = PlayerRef.FromEncoded(message.Snapshot.AuthorityRef);
                 IsReady = true;
+                AcknowledgePendingThrow(message.Snapshot);
+                _lastSnapshot = message.Snapshot;
+                Debug.Log(
+                    $"Player {LocalPlayerNumber} received snapshot: round {message.Snapshot.RoundNumber}, " +
+                    $"active player {message.Snapshot.ActivePlayer}, authority {_authorityPlayer.RawEncoded}");
                 SnapshotReceived?.Invoke(message.Snapshot);
             }
+        }
+
+        private void SendPendingThrow()
+        {
+            var target = ResolveAuthorityTarget();
+            _throwSendAttempts++;
+            _nextThrowRetryTime = Time.unscaledTime + ThrowRetryInterval;
+            Debug.Log(
+                $"Sending player {LocalPlayerNumber} throw to authority {target.RawEncoded} " +
+                $"(attempt {_throwSendAttempts}/{MaximumThrowSendAttempts})");
+            Send(target, _pendingThrow);
+        }
+
+        private PlayerRef ResolveAuthorityTarget()
+        {
+            if (_authorityPlayer.IsRealPlayer && _authorityPlayer != _runner.LocalPlayer)
+            {
+                return _authorityPlayer;
+            }
+
+            foreach (var player in _runner.ActivePlayers)
+            {
+                if (player != _runner.LocalPlayer)
+                {
+                    return player;
+                }
+            }
+
+            return PlayerRef.None;
+        }
+
+        private void AcknowledgePendingThrow(GameSnapshot snapshot)
+        {
+            if (_pendingThrow == null || GetLocalThrowCount(snapshot) <= _pendingThrowCount)
+            {
+                return;
+            }
+
+            Debug.Log($"Player {LocalPlayerNumber}'s throw was acknowledged by the authority");
+            _pendingThrow = null;
+        }
+
+        private int GetLocalThrowCount(GameSnapshot snapshot)
+        {
+            if (snapshot == null)
+            {
+                return 0;
+            }
+
+            return LocalPlayerNumber == 1 ? snapshot.PlayerOneThrows : snapshot.PlayerTwoThrows;
         }
 
         private void ApplyPlayerAssignment(GameSnapshot snapshot)
@@ -164,17 +256,25 @@ namespace Assets.Scripts
         {
             if (!player.IsRealPlayer)
             {
+                Debug.LogError(
+                    $"Cannot send {message.Type}: target PlayerRef {player.RawEncoded} is not a real player");
                 return;
             }
 
             var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(message));
-            _runner.SendReliableDataToPlayer(player, default, data);
+            var key = ReliableKey.FromInts(
+                _runner.LocalPlayer.RawEncoded,
+                ++_nextMessageId,
+                message.Type == ThrowMessageType ? 1 : 2,
+                0);
+            _runner.SendReliableDataToPlayer(player, key, data);
         }
 
         public GameSnapshot CreateSnapshotWithPlayerRefs(GameSnapshot snapshot)
         {
             if (_players.Count == 2)
             {
+                snapshot.AuthorityRef = _runner.LocalPlayer.RawEncoded;
                 snapshot.PlayerOneRef = _players[0].RawEncoded;
                 snapshot.PlayerTwoRef = _players[1].RawEncoded;
             }
@@ -203,6 +303,7 @@ namespace Assets.Scripts
         private class WireMessage
         {
             public string Type;
+            public int SenderRef;
             public int Option;
             public ThrowResult Result;
             public GameSnapshot Snapshot;
@@ -212,6 +313,7 @@ namespace Assets.Scripts
     [Serializable]
     public class GameSnapshot
     {
+        public int AuthorityRef;
         public int PlayerOneRef;
         public int PlayerTwoRef;
         public int RoundNumber;

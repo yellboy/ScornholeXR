@@ -16,6 +16,14 @@ namespace Assets.Scripts
         [SerializeField] private GameObject _roundPanel;
         [SerializeField] private GameObject _roundFinishedPanel;
 
+        private void Awake()
+        {
+            if (GetComponent<RuntimeDebugMenu>() == null)
+            {
+                gameObject.AddComponent<RuntimeDebugMenu>();
+            }
+        }
+
         public void ShowStatus(string status)
         {
             _roundPanel.SetActive(true);

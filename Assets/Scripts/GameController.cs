@@ -89,19 +89,27 @@ namespace Assets.Scripts
             }
 
             _multiplayerSession.SubmitThrow(cornbag.Index, cornbag.Result.Value);
+            _cornbagsController.SetThrowingEnabled(false);
         }
 
         private void OnNetworkThrowReceived(int player, int option, ThrowResult result)
         {
-            if (!_multiplayerSession.IsAuthority || player != _activePlayer ||
-                _playerOneRound == null || _playerTwoRound == null)
+            if (!_multiplayerSession.IsAuthority)
             {
+                return;
+            }
+
+            if (player != _activePlayer || _playerOneRound == null || _playerTwoRound == null)
+            {
+                Debug.LogWarning(
+                    $"Throw rejected: player={player}, active={_activePlayer}, roundReady={_playerOneRound != null && _playerTwoRound != null}");
                 return;
             }
 
             var playerRound = player == 1 ? _playerOneRound : _playerTwoRound;
             if (playerRound.ThrowCount >= ThrowsPerPlayer)
             {
+                Debug.LogWarning($"Throw rejected: player {player} already made {ThrowsPerPlayer} throws");
                 return;
             }
 

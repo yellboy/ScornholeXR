@@ -17,6 +17,7 @@ namespace Assets.Scripts
         private Round _playerOneRound;
         private Round _playerTwoRound;
         private int _roundNumber;
+        private int _appliedRoundNumber;
         private int _activePlayer;
         private int _playerOneTotalPoints;
         private int _playerTwoTotalPoints;
@@ -192,6 +193,12 @@ namespace Assets.Scripts
 
         private void ApplySnapshot(GameSnapshot snapshot)
         {
+            if (snapshot.RoundNumber != _appliedRoundNumber)
+            {
+                _appliedRoundNumber = snapshot.RoundNumber;
+                _cornbagsController.Reset();
+            }
+
             var canThrow = !snapshot.RoundComplete &&
                 snapshot.ActivePlayer == _multiplayerSession.LocalPlayerNumber;
             _cornbagsController.SetThrowingEnabled(canThrow);

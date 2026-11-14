@@ -18,6 +18,7 @@ namespace Assets.Scripts
         private Round _playerTwoRound;
         private int _roundNumber;
         private int _appliedRoundNumber;
+        private bool _appliedRoundComplete;
         private int _activePlayer;
         private int _playerOneTotalPoints;
         private int _playerTwoTotalPoints;
@@ -35,8 +36,10 @@ namespace Assets.Scripts
         {
             _taskFetcher.TaskReceived += OnTaskReceived;
             _cornbagsController.Thrown += OnCornbagThrown;
+            _cornbagsController.ThrowStarted += OnCornbagThrowStarted;
             _multiplayerSession.SessionReady += OnSessionReady;
             _multiplayerSession.ThrowReceived += OnNetworkThrowReceived;
+            _multiplayerSession.RemoteBagThrowReceived += OnRemoteBagThrowReceived;
             _multiplayerSession.SnapshotReceived += ApplySnapshot;
             _multiplayerSession.StatusChanged += OnStatusChanged;
         }
@@ -45,8 +48,10 @@ namespace Assets.Scripts
         {
             _taskFetcher.TaskReceived -= OnTaskReceived;
             _cornbagsController.Thrown -= OnCornbagThrown;
+            _cornbagsController.ThrowStarted -= OnCornbagThrowStarted;
             _multiplayerSession.SessionReady -= OnSessionReady;
             _multiplayerSession.ThrowReceived -= OnNetworkThrowReceived;
+            _multiplayerSession.RemoteBagThrowReceived -= OnRemoteBagThrowReceived;
             _multiplayerSession.SnapshotReceived -= ApplySnapshot;
             _multiplayerSession.StatusChanged -= OnStatusChanged;
         }
@@ -91,6 +96,40 @@ namespace Assets.Scripts
 
             _multiplayerSession.SubmitThrow(cornbag.Index, cornbag.Result.Value);
             _cornbagsController.SetThrowingEnabled(false);
+        }
+
+        private void OnCornbagThrowStarted(Cornbag cornbag, Vector3 velocity, Vector3 angularVelocity)
+        {
+            _multiplayerSession.PublishBagThrow(
+                _appliedRoundNumber,
+                cornbag.Index,
+                cornbag.transform.position,
+                cornbag.transform.rotation,
+                velocity,
+                angularVelocity);
+        }
+
+        private void OnRemoteBagThrowReceived(
+            int roundNumber,
+            int cornbagIndex,
+            Vector3 position,
+            Quaternion rotation,
+            Vector3 velocity,
+            Vector3 angularVelocity)
+        {
+            if (_appliedRoundComplete || roundNumber != _appliedRoundNumber)
+            {
+                Debug.LogWarning(
+                    $"Ignoring delayed cornbag launch for round {roundNumber}; current round is {_appliedRoundNumber}");
+                return;
+            }
+
+            _cornbagsController.SpawnRemoteThrow(
+                cornbagIndex,
+                position,
+                rotation,
+                velocity,
+                angularVelocity);
         }
 
         private void OnNetworkThrowReceived(int player, int option, ThrowResult result)
@@ -193,7 +232,13 @@ namespace Assets.Scripts
 
         private void ApplySnapshot(GameSnapshot snapshot)
         {
-            if (snapshot.RoundNumber != _appliedRoundNumber)
+            _appliedRoundComplete = snapshot.RoundComplete;
+
+            if (snapshot.RoundComplete)
+            {
+                _cornbagsController.Reset();
+            }
+            else if (snapshot.RoundNumber != _appliedRoundNumber)
             {
                 _appliedRoundNumber = snapshot.RoundNumber;
                 _cornbagsController.Reset();

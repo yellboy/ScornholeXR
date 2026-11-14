@@ -7,6 +7,7 @@ namespace Assets.Scripts
     public class CornbagsController : MonoBehaviour
     {
         public event Action<Cornbag> Thrown;
+        public event Action<Cornbag, Vector3, Vector3> ThrowStarted;
 
         [Serializable]
         private class CornbagWithInitializationDetails 
@@ -61,6 +62,11 @@ namespace Assets.Scripts
             }
 
             cornbag.Thrown += OnThrown;
+            var throwEnabler = gameObject.GetComponent<CornBagThrowEnabler>();
+            if (throwEnabler != null)
+            {
+                throwEnabler.Thrown += OnThrowStarted;
+            }
             SetThrowingEnabled(gameObject);
 
             Debug.Log($"Subscribed to {gameObject.name}");
@@ -94,12 +100,16 @@ namespace Assets.Scripts
             }
 
             cornbag.Thrown -= OnThrown;
+            var throwEnabler = child.GetComponent<CornBagThrowEnabler>();
+            if (throwEnabler != null)
+            {
+                throwEnabler.Thrown -= OnThrowStarted;
+            }
         }
 
         private void OnThrown(Cornbag cornbag)
         {
             ReSpawn(cornbag);
-            Thrown?.Invoke(cornbag);
 
             if (cornbag.Result == ThrowResult.HoleHit)
             {
@@ -111,6 +121,17 @@ namespace Assets.Scripts
                 // Add to the list of thrown cornbags, so that it can be destroyed when Reset is called.
                 _thrownCornbags.Add(cornbag);
             }
+
+            Thrown?.Invoke(cornbag);
+        }
+
+        private void OnThrowStarted(CornBagThrowEnabler throwEnabler, Vector3 velocity, Vector3 angularVelocity)
+        {
+            var cornbag = throwEnabler.GetComponent<Cornbag>();
+            if (cornbag != null)
+            {
+                ThrowStarted?.Invoke(cornbag, velocity, angularVelocity);
+            }
         }
 
         private void ReSpawn(Cornbag cornbag)
@@ -120,6 +141,49 @@ namespace Assets.Scripts
             newCornbag.transform.localPosition = cornbagInitialization.InitialPosition;
             newCornbag.transform.localRotation= cornbagInitialization.InitialRotation;
             Subscribe(newCornbag);
+        }
+
+        public void SpawnRemoteThrow(
+            int cornbagIndex,
+            Vector3 position,
+            Quaternion rotation,
+            Vector3 velocity,
+            Vector3 angularVelocity)
+        {
+            if (cornbagIndex < 1 || cornbagIndex > _cornbagInitializationDetails.Count)
+            {
+                Debug.LogError($"Cannot spawn remote cornbag with index {cornbagIndex}");
+                return;
+            }
+
+            var initialization = _cornbagInitializationDetails[cornbagIndex - 1];
+            var remoteBag = Instantiate(initialization.CornbagPrefab, position, rotation, transform);
+            var cornbag = remoteBag.GetComponent<Cornbag>();
+            var throwEnabler = remoteBag.GetComponent<CornBagThrowEnabler>();
+            var rigidbody = remoteBag.GetComponent<Rigidbody>();
+
+            if (cornbag != null)
+            {
+                cornbag.enabled = false;
+                _thrownCornbags.Add(cornbag);
+            }
+
+            if (throwEnabler != null)
+            {
+                throwEnabler.SetCanThrow(false);
+                throwEnabler.enabled = false;
+            }
+
+            if (rigidbody == null)
+            {
+                Debug.LogError($"Remote cornbag {cornbagIndex} is missing its Rigidbody");
+                Destroy(remoteBag);
+                return;
+            }
+
+            rigidbody.isKinematic = false;
+            rigidbody.linearVelocity = velocity;
+            rigidbody.angularVelocity = angularVelocity;
         }
     }
 }

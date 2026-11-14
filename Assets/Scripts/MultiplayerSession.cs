@@ -12,6 +12,7 @@ namespace Assets.Scripts
     {
         private const string ThrowMessageType = "throw";
         private const string SnapshotMessageType = "snapshot";
+        private const string BagThrowMessageType = "bagThrow";
         private const int MaximumThrowSendAttempts = 5;
         private const float ThrowRetryInterval = 0.75f;
 
@@ -29,6 +30,7 @@ namespace Assets.Scripts
 
         public event Action SessionReady;
         public event Action<int, int, ThrowResult> ThrowReceived;
+        public event Action<int, int, Vector3, Quaternion, Vector3, Vector3> RemoteBagThrowReceived;
         public event Action<GameSnapshot> SnapshotReceived;
         public event Action<string> StatusChanged;
 
@@ -125,6 +127,44 @@ namespace Assets.Scripts
             }
         }
 
+        public void PublishBagThrow(
+            int roundNumber,
+            int cornbagIndex,
+            Vector3 position,
+            Quaternion rotation,
+            Vector3 velocity,
+            Vector3 angularVelocity)
+        {
+            if (!IsReady || _runner == null || !_runner.IsRunning)
+            {
+                Debug.LogWarning("Remote bag throw was not sent because the session is not ready");
+                return;
+            }
+
+            var message = new WireMessage
+            {
+                Type = BagThrowMessageType,
+                SenderRef = _runner.LocalPlayer.RawEncoded,
+                BagThrow = new BagThrowMessage
+                {
+                    RoundNumber = roundNumber,
+                    CornbagIndex = cornbagIndex,
+                    Position = WireVector3.From(position),
+                    Rotation = WireQuaternion.From(rotation),
+                    Velocity = WireVector3.From(velocity),
+                    AngularVelocity = WireVector3.From(angularVelocity)
+                }
+            };
+
+            foreach (var player in _runner.ActivePlayers)
+            {
+                if (player != _runner.LocalPlayer)
+                {
+                    Send(player, message);
+                }
+            }
+        }
+
         public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
         {
             if (!runner.IsSharedModeMasterClient)
@@ -172,6 +212,21 @@ namespace Assets.Scripts
                 var playerNumber = GetPlayerNumber(sender);
                 Debug.Log($"Authority received throw from player {playerNumber}: option {message.Option}, result {message.Result}");
                 ThrowReceived?.Invoke(playerNumber, message.Option, message.Result);
+                return;
+            }
+
+            if (message.Type == BagThrowMessageType && message.BagThrow != null &&
+                message.SenderRef != runner.LocalPlayer.RawEncoded)
+            {
+                var bagThrow = message.BagThrow;
+                Debug.Log($"Received remote cornbag {bagThrow.CornbagIndex} launch from {message.SenderRef}");
+                RemoteBagThrowReceived?.Invoke(
+                    bagThrow.RoundNumber,
+                    bagThrow.CornbagIndex,
+                    bagThrow.Position.ToVector3(),
+                    bagThrow.Rotation.ToQuaternion(),
+                    bagThrow.Velocity.ToVector3(),
+                    bagThrow.AngularVelocity.ToVector3());
                 return;
             }
 
@@ -265,7 +320,8 @@ namespace Assets.Scripts
             var key = ReliableKey.FromInts(
                 _runner.LocalPlayer.RawEncoded,
                 ++_nextMessageId,
-                message.Type == ThrowMessageType ? 1 : 2,
+                message.Type == ThrowMessageType ? 1 :
+                    message.Type == SnapshotMessageType ? 2 : 3,
                 0);
             _runner.SendReliableDataToPlayer(player, key, data);
         }
@@ -306,7 +362,55 @@ namespace Assets.Scripts
             public int SenderRef;
             public int Option;
             public ThrowResult Result;
+            public BagThrowMessage BagThrow;
             public GameSnapshot Snapshot;
+        }
+
+        [Serializable]
+        private class BagThrowMessage
+        {
+            public int RoundNumber;
+            public int CornbagIndex;
+            public WireVector3 Position;
+            public WireQuaternion Rotation;
+            public WireVector3 Velocity;
+            public WireVector3 AngularVelocity;
+        }
+
+        [Serializable]
+        private class WireVector3
+        {
+            public float X;
+            public float Y;
+            public float Z;
+
+            public static WireVector3 From(Vector3 value) => new WireVector3
+            {
+                X = value.x,
+                Y = value.y,
+                Z = value.z
+            };
+
+            public Vector3 ToVector3() => new Vector3(X, Y, Z);
+        }
+
+        [Serializable]
+        private class WireQuaternion
+        {
+            public float X;
+            public float Y;
+            public float Z;
+            public float W;
+
+            public static WireQuaternion From(Quaternion value) => new WireQuaternion
+            {
+                X = value.x,
+                Y = value.y,
+                Z = value.z,
+                W = value.w
+            };
+
+            public Quaternion ToQuaternion() => new Quaternion(X, Y, Z, W);
         }
     }
 

@@ -126,6 +126,8 @@ namespace Assets.Scripts
             _scrollRect.vertical = true;
             _scrollRect.movementType = ScrollRect.MovementType.Clamped;
             _scrollRect.scrollSensitivity = 35f;
+
+            _panel.SetActive(false);
         }
 
         private void TogglePanel()

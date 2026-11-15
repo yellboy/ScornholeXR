@@ -5,15 +5,18 @@ namespace Assets.Scripts
 {
     public class GameController : MonoBehaviour
     {
-        private const int ThrowsPerPlayer = 5;
-        private const int TotalRounds = 5;
+        private const int DefaultThrowsPerPlayer = 5;
+        private const int DefaultTotalRounds = 5;
         private const float RoundResultsDuration = 5f;
 
         [SerializeField] private TaskFetcher _taskFetcher;
         [SerializeField] private MainDisplay _mainDisplay;
         [SerializeField] private CornbagsController _cornbagsController;
+        [SerializeField] private GameMenu _gameMenu;
 
         private MultiplayerSession _multiplayerSession;
+        private int _throwsPerPlayer = DefaultThrowsPerPlayer;
+        private int _totalRounds = DefaultTotalRounds;
         private Round _playerOneRound;
         private Round _playerTwoRound;
         private int _roundNumber;
@@ -39,6 +42,13 @@ namespace Assets.Scripts
             _multiplayerSession.ThrowReceived += OnNetworkThrowReceived;
             _multiplayerSession.SnapshotReceived += ApplySnapshot;
             _multiplayerSession.StatusChanged += OnStatusChanged;
+            _multiplayerSession.ConnectionRejected += OnConnectionRejected;
+
+            if (_gameMenu != null)
+            {
+                _gameMenu.StartGameRequested += OnStartGameRequested;
+                _gameMenu.JoinGameRequested += OnJoinGameRequested;
+            }
         }
 
         private void OnDisable()
@@ -49,12 +59,47 @@ namespace Assets.Scripts
             _multiplayerSession.ThrowReceived -= OnNetworkThrowReceived;
             _multiplayerSession.SnapshotReceived -= ApplySnapshot;
             _multiplayerSession.StatusChanged -= OnStatusChanged;
+            _multiplayerSession.ConnectionRejected -= OnConnectionRejected;
+
+            if (_gameMenu != null)
+            {
+                _gameMenu.StartGameRequested -= OnStartGameRequested;
+                _gameMenu.JoinGameRequested -= OnJoinGameRequested;
+            }
         }
 
         private void Start()
         {
             _cornbagsController.SetThrowingEnabled(false);
-            _mainDisplay.ShowStatus("Connecting to multiplayer...");
+            _mainDisplay.ShowStatus(string.Empty);
+
+            if (_gameMenu == null)
+            {
+                Debug.LogError("GameMenu is not assigned on the GameController.");
+            }
+        }
+
+        private void OnStartGameRequested(int totalRounds, int throwsPerPlayer)
+        {
+            _totalRounds = totalRounds;
+            _throwsPerPlayer = throwsPerPlayer;
+            _multiplayerSession.Connect(SessionRole.Host);
+        }
+
+        private void OnJoinGameRequested()
+        {
+            _multiplayerSession.Connect(SessionRole.Joiner);
+        }
+
+        private void OnConnectionRejected(string message)
+        {
+            _cornbagsController.SetThrowingEnabled(false);
+            _mainDisplay.ShowStatus(string.Empty);
+
+            if (_gameMenu != null)
+            {
+                _gameMenu.Show(message);
+            }
         }
 
         private void OnSessionReady()
@@ -108,16 +153,16 @@ namespace Assets.Scripts
             }
 
             var playerRound = player == 1 ? _playerOneRound : _playerTwoRound;
-            if (playerRound.ThrowCount >= ThrowsPerPlayer)
+            if (playerRound.ThrowCount >= _throwsPerPlayer)
             {
-                Debug.LogWarning($"Throw rejected: player {player} already made {ThrowsPerPlayer} throws");
+                Debug.LogWarning($"Throw rejected: player {player} already made {_throwsPerPlayer} throws");
                 return;
             }
 
             playerRound.ThrowMade(option, result);
 
-            if (_playerOneRound.ThrowCount >= ThrowsPerPlayer &&
-                _playerTwoRound.ThrowCount >= ThrowsPerPlayer)
+            if (_playerOneRound.ThrowCount >= _throwsPerPlayer &&
+                _playerTwoRound.ThrowCount >= _throwsPerPlayer)
             {
                 EndRound();
                 return;
@@ -125,7 +170,7 @@ namespace Assets.Scripts
 
             var otherPlayer = player == 1 ? 2 : 1;
             var otherRound = otherPlayer == 1 ? _playerOneRound : _playerTwoRound;
-            _activePlayer = otherRound.ThrowCount < ThrowsPerPlayer ? otherPlayer : player;
+            _activePlayer = otherRound.ThrowCount < _throwsPerPlayer ? otherPlayer : player;
             BroadcastSnapshot();
         }
 
@@ -154,7 +199,7 @@ namespace Assets.Scripts
             _playerTwoTotalPoints += _playerTwoRound.Points;
             _activePlayer = 0;
 
-            var gameComplete = _roundNumber >= TotalRounds;
+            var gameComplete = _roundNumber >= _totalRounds;
             BroadcastSnapshot(true, gameComplete);
 
             if (!gameComplete)
@@ -175,6 +220,8 @@ namespace Assets.Scripts
             var snapshot = new GameSnapshot
             {
                 RoundNumber = _roundNumber,
+                TotalRounds = _totalRounds,
+                ThrowsPerPlayer = _throwsPerPlayer,
                 ActivePlayer = _activePlayer,
                 PlayerOneThrows = _playerOneRound?.ThrowCount ?? 0,
                 PlayerTwoThrows = _playerTwoRound?.ThrowCount ?? 0,

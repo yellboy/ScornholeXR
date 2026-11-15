@@ -55,6 +55,17 @@ Always provide only a task and nothing else.";
         }
 
         var jsonTask = lastResponse.Replace("Assistant:", "");
+
+        // The model sometimes wraps the JSON in a markdown code fence or adds text around it.
+        var start = jsonTask.IndexOf('{');
+        var end = jsonTask.LastIndexOf('}');
+        if (start < 0 || end < start)
+        {
+            Debug.LogError($"No JSON task found in the response: {lastResponse}");
+            return;
+        }
+
+        jsonTask = jsonTask.Substring(start, end - start + 1);
         var task = JsonConvert.DeserializeObject<TaskObject>(jsonTask);
 
         _previousTasks.Add(task);

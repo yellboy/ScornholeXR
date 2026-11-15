@@ -36,7 +36,7 @@ namespace Assets.Scripts
         {
             ShowTask(snapshot.Task);
             _roundPointsText.text =
-                $"Round {snapshot.RoundNumber}/5\n" +
+                $"Round {snapshot.RoundNumber}/{snapshot.TotalRounds}\n" +
                 $"You are Player {localPlayer}\n" +
                 $"Player {snapshot.ActivePlayer}'s turn\n" +
                 $"Round score: P1 {snapshot.PlayerOneRoundPoints} - P2 {snapshot.PlayerTwoRoundPoints}";
@@ -68,7 +68,7 @@ namespace Assets.Scripts
         {
             _totalPointsText.text =
                 $"Total: P1 {snapshot.PlayerOneTotalPoints} - P2 {snapshot.PlayerTwoTotalPoints}\n" +
-                $"Throws: P1 {snapshot.PlayerOneThrows}/5 - P2 {snapshot.PlayerTwoThrows}/5";
+                $"Throws: P1 {snapshot.PlayerOneThrows}/{snapshot.ThrowsPerPlayer} - P2 {snapshot.PlayerTwoThrows}/{snapshot.ThrowsPerPlayer}";
         }
 
         public void ShowRoundPoints(int points)

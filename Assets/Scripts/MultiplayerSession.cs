@@ -8,6 +8,12 @@ using UnityEngine;
 
 namespace Assets.Scripts
 {
+    public enum SessionRole
+    {
+        Host,
+        Joiner
+    }
+
     public class MultiplayerSession : MonoBehaviour, INetworkRunnerCallbacks
     {
         private const string ThrowMessageType = "throw";
@@ -26,34 +32,70 @@ namespace Assets.Scripts
         private int _throwSendAttempts;
         private float _nextThrowRetryTime;
         private GameSnapshot _lastSnapshot;
+        private SessionRole _role;
 
         public event Action SessionReady;
         public event Action<int, int, ThrowResult> ThrowReceived;
         public event Action<GameSnapshot> SnapshotReceived;
         public event Action<string> StatusChanged;
+        public event Action<string> ConnectionRejected;
 
         public NetworkRunner Runner => _runner;
         public bool IsAuthority => _runner != null && _runner.IsRunning && _runner.IsSharedModeMasterClient;
         public int LocalPlayerNumber { get; private set; }
         public bool IsReady { get; private set; }
 
-        private async void Start()
+        public async void Connect(SessionRole role)
         {
-            StatusChanged?.Invoke("Connecting to multiplayer...");
+            if (_runner != null)
+            {
+                return;
+            }
 
-            _runner = gameObject.AddComponent<NetworkRunner>();
-            _runner.AddCallbacks(this);
+            _role = role;
+            StatusChanged?.Invoke(role == SessionRole.Host ? "Starting game..." : "Joining game...");
 
-            var result = await _runner.StartGame(new StartGameArgs
+            // The runner gets its own object so shutting it down never destroys this one.
+            var runnerObject = new GameObject("NetworkRunner");
+            runnerObject.transform.SetParent(transform, false);
+            var runner = runnerObject.AddComponent<NetworkRunner>();
+            _runner = runner;
+            runner.AddCallbacks(this);
+
+            var result = await runner.StartGame(new StartGameArgs
             {
                 GameMode = GameMode.Shared,
                 SessionName = _roomName,
                 PlayerCount = 2
             });
 
-            if (!result.Ok)
+            if (!result.Ok && _runner == runner)
             {
-                StatusChanged?.Invoke($"Could not connect: {result.ShutdownReason}");
+                RejectConnection($"Could not connect: {result.ShutdownReason}");
+            }
+        }
+
+        private async void RejectConnection(string message)
+        {
+            var runner = _runner;
+            _runner = null;
+            _players.Clear();
+            _authorityPlayer = PlayerRef.None;
+            _pendingThrow = null;
+            _lastSnapshot = null;
+            LocalPlayerNumber = 0;
+            IsReady = false;
+
+            ConnectionRejected?.Invoke(message);
+
+            if (runner != null)
+            {
+                await runner.Shutdown(false);
+            }
+
+            if (runner != null)
+            {
+                Destroy(runner.gameObject);
             }
         }
 
@@ -128,6 +170,32 @@ namespace Assets.Scripts
 
         public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
         {
+            if (runner != _runner)
+            {
+                return;
+            }
+
+            if (player == runner.LocalPlayer)
+            {
+                // The first player in the room is the master client and plays as Player 1.
+                if (_role == SessionRole.Host && !runner.IsSharedModeMasterClient)
+                {
+                    RejectConnection("A game is already running. Join it instead.");
+                    return;
+                }
+
+                if (_role == SessionRole.Joiner && runner.IsSharedModeMasterClient)
+                {
+                    RejectConnection("No game found. Ask Player 1 to start a game first.");
+                    return;
+                }
+
+                if (_role == SessionRole.Joiner)
+                {
+                    StatusChanged?.Invoke("Joined. Waiting for the game to start...");
+                }
+            }
+
             if (!runner.IsSharedModeMasterClient)
             {
                 return;
@@ -298,7 +366,13 @@ namespace Assets.Scripts
         public void OnSceneLoadDone(NetworkRunner runner) { }
         public void OnSceneLoadStart(NetworkRunner runner) { }
         public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList) { }
-        public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) => StatusChanged?.Invoke($"Session ended: {shutdownReason}");
+        public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
+        {
+            if (runner == _runner)
+            {
+                StatusChanged?.Invoke($"Session ended: {shutdownReason}");
+            }
+        }
         public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
 
         [Serializable]
@@ -319,6 +393,8 @@ namespace Assets.Scripts
         public int PlayerOneRef;
         public int PlayerTwoRef;
         public int RoundNumber;
+        public int TotalRounds;
+        public int ThrowsPerPlayer;
         public int ActivePlayer;
         public int PlayerOneThrows;
         public int PlayerTwoThrows;

@@ -64,6 +64,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Cornbag green
       objectReference: {fileID: 0}
+    - target: {fileID: 7604690895888940452, guid: db0760d5105aee94c90599840f01258b, type: 3}
+      propertyPath: SortKey
+      value: 1979824232
+      objectReference: {fileID: 0}
     - target: {fileID: 8365032737922094542, guid: db0760d5105aee94c90599840f01258b, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 

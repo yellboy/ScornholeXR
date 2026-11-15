@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using Fusion;
 using UnityEngine;
 
 namespace Assets.Scripts
 {
     public class CornbagsController : MonoBehaviour
     {
+        private const float AuthorityRequestInterval = 0.5f;
+
         public event Action<Cornbag> Thrown;
-        public event Action<Cornbag, Vector3, Vector3> ThrowStarted;
 
         [Serializable]
         private class CornbagWithInitializationDetails 
@@ -19,7 +21,14 @@ namespace Assets.Scripts
 
         [SerializeField] private List<CornbagWithInitializationDetails> _cornbagInitializationDetails;
         private IList<Cornbag> _thrownCornbags = new List<Cornbag>();
+        private readonly List<NetworkCornbag> _networkCornbags = new List<NetworkCornbag>();
+        private readonly List<NetworkCornbag> _pendingDespawn = new List<NetworkCornbag>();
+        private NetworkRunner _runner;
+        private bool _networkingStarted;
+        private float _nextAuthorityRequestTime;
         private bool _throwingEnabled;
+
+        public bool ThrowingEnabled => _throwingEnabled;
 
         public void SetThrowingEnabled(bool throwingEnabled)
         {
@@ -28,6 +37,17 @@ namespace Assets.Scripts
             foreach (Transform child in transform)
             {
                 SetThrowingEnabled(child.gameObject);
+            }
+
+            foreach (var networkCornbag in _networkCornbags)
+            {
+                if (throwingEnabled)
+                {
+                    // The player whose turn it is simulates every cornbag so they collide consistently.
+                    RequestStateAuthority(networkCornbag);
+                }
+
+                networkCornbag.RefreshAuthorityState();
             }
         }
 
@@ -42,6 +62,130 @@ namespace Assets.Scripts
             }
 
             _thrownCornbags.Clear();
+
+            if (_networkingStarted && _runner.IsSharedModeMasterClient)
+            {
+                foreach (var networkCornbag in _networkCornbags)
+                {
+                    if (networkCornbag.IsThrown && !_pendingDespawn.Contains(networkCornbag))
+                    {
+                        _pendingDespawn.Add(networkCornbag);
+                    }
+                }
+
+                _nextAuthorityRequestTime = 0f;
+            }
+        }
+
+        public void StartNetworkedSession(NetworkRunner runner)
+        {
+            if (_networkingStarted)
+            {
+                return;
+            }
+
+            _runner = runner;
+            _networkingStarted = true;
+
+            // The scene's local cornbags are replaced by networked ones.
+            foreach (Transform child in transform)
+            {
+                Unsubscribe(child.gameObject);
+                Destroy(child.gameObject);
+            }
+
+            _thrownCornbags.Clear();
+
+            if (_runner.IsSharedModeMasterClient)
+            {
+                for (var index = 1; index <= _cornbagInitializationDetails.Count; index++)
+                {
+                    SpawnNetworkCornbag(index);
+                }
+            }
+        }
+
+        public void RegisterNetworkCornbag(NetworkCornbag networkCornbag)
+        {
+            if (_networkCornbags.Contains(networkCornbag))
+            {
+                return;
+            }
+
+            _networkCornbags.Add(networkCornbag);
+            networkCornbag.Cornbag.Thrown += OnThrown;
+
+            if (_throwingEnabled)
+            {
+                RequestStateAuthority(networkCornbag);
+            }
+        }
+
+        public void UnregisterNetworkCornbag(NetworkCornbag networkCornbag)
+        {
+            _networkCornbags.Remove(networkCornbag);
+            _pendingDespawn.Remove(networkCornbag);
+
+            if (networkCornbag.Cornbag != null)
+            {
+                networkCornbag.Cornbag.Thrown -= OnThrown;
+            }
+        }
+
+        private void Update()
+        {
+            if (_pendingDespawn.Count == 0)
+            {
+                return;
+            }
+
+            var requestAuthority = Time.unscaledTime >= _nextAuthorityRequestTime;
+            if (requestAuthority)
+            {
+                _nextAuthorityRequestTime = Time.unscaledTime + AuthorityRequestInterval;
+            }
+
+            // Only the state authority can despawn, so the master takes over the cornbags it removes.
+            for (var i = _pendingDespawn.Count - 1; i >= 0; i--)
+            {
+                var networkCornbag = _pendingDespawn[i];
+                if (networkCornbag == null || networkCornbag.Object == null || !networkCornbag.Object.IsValid)
+                {
+                    _pendingDespawn.RemoveAt(i);
+                }
+                else if (networkCornbag.Object.HasStateAuthority)
+                {
+                    _pendingDespawn.RemoveAt(i);
+                    _runner.Despawn(networkCornbag.Object);
+                }
+                else if (requestAuthority)
+                {
+                    RequestStateAuthority(networkCornbag);
+                }
+            }
+        }
+
+        private static void RequestStateAuthority(NetworkCornbag networkCornbag)
+        {
+            var networkObject = networkCornbag.Object;
+            if (networkObject != null && networkObject.IsValid && !networkObject.HasStateAuthority)
+            {
+                networkObject.RequestStateAuthority();
+            }
+        }
+
+        private void SpawnNetworkCornbag(int cornbagIndex)
+        {
+            var initialization = _cornbagInitializationDetails[cornbagIndex - 1];
+            var localRotation = initialization.InitialRotation;
+            var isValidRotation = localRotation.x != 0f || localRotation.y != 0f ||
+                localRotation.z != 0f || localRotation.w != 0f;
+
+            _runner.Spawn(
+                initialization.CornbagPrefab,
+                transform.TransformPoint(initialization.InitialPosition),
+                transform.rotation * (isValidRotation ? localRotation : Quaternion.identity),
+                _runner.LocalPlayer);
         }
 
         private void OnEnable()
@@ -62,11 +206,6 @@ namespace Assets.Scripts
             }
 
             cornbag.Thrown += OnThrown;
-            var throwEnabler = gameObject.GetComponent<CornBagThrowEnabler>();
-            if (throwEnabler != null)
-            {
-                throwEnabler.Thrown += OnThrowStarted;
-            }
             SetThrowingEnabled(gameObject);
 
             Debug.Log($"Subscribed to {gameObject.name}");
@@ -100,15 +239,17 @@ namespace Assets.Scripts
             }
 
             cornbag.Thrown -= OnThrown;
-            var throwEnabler = child.GetComponent<CornBagThrowEnabler>();
-            if (throwEnabler != null)
-            {
-                throwEnabler.Thrown -= OnThrowStarted;
-            }
         }
 
         private void OnThrown(Cornbag cornbag)
         {
+            var networkCornbag = cornbag.GetComponent<NetworkCornbag>();
+            if (networkCornbag != null)
+            {
+                OnNetworkCornbagThrown(cornbag, networkCornbag);
+                return;
+            }
+
             ReSpawn(cornbag);
 
             if (cornbag.Result == ThrowResult.HoleHit)
@@ -125,12 +266,17 @@ namespace Assets.Scripts
             Thrown?.Invoke(cornbag);
         }
 
-        private void OnThrowStarted(CornBagThrowEnabler throwEnabler, Vector3 velocity, Vector3 angularVelocity)
+        private void OnNetworkCornbagThrown(Cornbag cornbag, NetworkCornbag networkCornbag)
         {
-            var cornbag = throwEnabler.GetComponent<Cornbag>();
-            if (cornbag != null)
+            networkCornbag.MarkResolved(cornbag.Result.Value);
+            SpawnNetworkCornbag(cornbag.Index);
+
+            Thrown?.Invoke(cornbag);
+
+            if (cornbag.Result == ThrowResult.HoleHit)
             {
-                ThrowStarted?.Invoke(cornbag, velocity, angularVelocity);
+                // Despawn if it is in the hole, so that it doesn't block other cornbags from going in.
+                _runner.Despawn(networkCornbag.Object);
             }
         }
 
@@ -141,49 +287,6 @@ namespace Assets.Scripts
             newCornbag.transform.localPosition = cornbagInitialization.InitialPosition;
             newCornbag.transform.localRotation= cornbagInitialization.InitialRotation;
             Subscribe(newCornbag);
-        }
-
-        public void SpawnRemoteThrow(
-            int cornbagIndex,
-            Vector3 position,
-            Quaternion rotation,
-            Vector3 velocity,
-            Vector3 angularVelocity)
-        {
-            if (cornbagIndex < 1 || cornbagIndex > _cornbagInitializationDetails.Count)
-            {
-                Debug.LogError($"Cannot spawn remote cornbag with index {cornbagIndex}");
-                return;
-            }
-
-            var initialization = _cornbagInitializationDetails[cornbagIndex - 1];
-            var remoteBag = Instantiate(initialization.CornbagPrefab, position, rotation, transform);
-            var cornbag = remoteBag.GetComponent<Cornbag>();
-            var throwEnabler = remoteBag.GetComponent<CornBagThrowEnabler>();
-            var rigidbody = remoteBag.GetComponent<Rigidbody>();
-
-            if (cornbag != null)
-            {
-                cornbag.enabled = false;
-                _thrownCornbags.Add(cornbag);
-            }
-
-            if (throwEnabler != null)
-            {
-                throwEnabler.SetCanThrow(false);
-                throwEnabler.enabled = false;
-            }
-
-            if (rigidbody == null)
-            {
-                Debug.LogError($"Remote cornbag {cornbagIndex} is missing its Rigidbody");
-                Destroy(remoteBag);
-                return;
-            }
-
-            rigidbody.isKinematic = false;
-            rigidbody.linearVelocity = velocity;
-            rigidbody.angularVelocity = angularVelocity;
         }
     }
 }

@@ -19,6 +19,12 @@ namespace Assets.Scripts
 
         public ThrowResult? Result { get; private set; }
 
+        public void ApplyNetworkResult(ThrowResult result)
+        {
+            Result = result;
+            _resolved = true;
+        }
+
         private void FixedUpdate()
         {
             if (_resolved)

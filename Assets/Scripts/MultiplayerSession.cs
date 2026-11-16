@@ -1,9 +1,11 @@
 using Fusion;
+using Fusion.Photon.Realtime;
 using Fusion.Sockets;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Assets.Scripts
@@ -21,6 +23,12 @@ namespace Assets.Scripts
         private const int MaximumThrowSendAttempts = 5;
         private const float ThrowRetryInterval = 0.75f;
 
+        // Null means the joiner's own best region. The host always plays in its best region.
+        private static readonly string[] JoinRegions =
+        {
+            null, "eu", "us", "asia", "usw", "sa", "jp", "au", "in", "kr", "cae", "za", "tr", "uae", "hk", "ussc"
+        };
+
         [SerializeField] private string _roomName = "scornhole-main-v2";
 
         private readonly List<PlayerRef> _players = new List<PlayerRef>(2);
@@ -33,6 +41,7 @@ namespace Assets.Scripts
         private float _nextThrowRetryTime;
         private GameSnapshot _lastSnapshot;
         private SessionRole _role;
+        private bool _searching;
 
         public event Action SessionReady;
         public event Action<int, int, ThrowResult> ThrowReceived;
@@ -47,31 +56,109 @@ namespace Assets.Scripts
 
         public async void Connect(SessionRole role)
         {
-            if (_runner != null)
+            if (_runner != null || _searching)
             {
                 return;
             }
 
             _role = role;
-            StatusChanged?.Invoke(role == SessionRole.Host ? "Starting game..." : "Joining game...");
 
-            // The runner gets its own object so shutting it down never destroys this one.
-            var runnerObject = new GameObject("NetworkRunner");
-            runnerObject.transform.SetParent(transform, false);
-            var runner = runnerObject.AddComponent<NetworkRunner>();
-            _runner = runner;
-            runner.AddCallbacks(this);
-
-            var result = await runner.StartGame(new StartGameArgs
+            if (role == SessionRole.Joiner)
             {
-                GameMode = GameMode.Shared,
-                SessionName = _roomName,
-                PlayerCount = 2
-            });
+                await JoinGameAsync();
+                return;
+            }
+
+            StatusChanged?.Invoke("Starting game...");
+            var runner = CreateRunner();
+            var result = await StartRunner(runner, null);
 
             if (!result.Ok && _runner == runner)
             {
                 RejectConnection($"Could not connect: {result.ShutdownReason}");
+            }
+        }
+
+        // Rooms are per region, so the joiner looks for the host's room region by region.
+        private async Task JoinGameAsync()
+        {
+            _searching = true;
+            var fullGameFound = false;
+
+            foreach (var region in JoinRegions)
+            {
+                StatusChanged?.Invoke(region == null
+                    ? "Searching for a game..."
+                    : $"Searching for a game (region {region})...");
+
+                var runner = CreateRunner();
+                var result = await StartRunner(runner, region);
+
+                // Landing as master client means we created an empty room instead of joining the host's.
+                if (result.Ok && !runner.IsSharedModeMasterClient)
+                {
+                    _searching = false;
+                    StatusChanged?.Invoke("Joined. Waiting for the game to start...");
+                    return;
+                }
+
+                fullGameFound |= result.ShutdownReason == ShutdownReason.GameIsFull;
+                await DisposeRunner(runner);
+            }
+
+            _searching = false;
+            ConnectionRejected?.Invoke(fullGameFound
+                ? "That game is already full."
+                : "No game found. Ask Player 1 to start a game first.");
+        }
+
+        private NetworkRunner CreateRunner()
+        {
+            // The runner gets its own object so shutting it down never destroys this one.
+            var runnerObject = new GameObject("NetworkRunner");
+            runnerObject.transform.SetParent(transform, false);
+            var runner = runnerObject.AddComponent<NetworkRunner>();
+            runner.AddCallbacks(this);
+            _runner = runner;
+            return runner;
+        }
+
+        private Task<StartGameResult> StartRunner(NetworkRunner runner, string region)
+        {
+            var args = new StartGameArgs
+            {
+                GameMode = GameMode.Shared,
+                SessionName = _roomName,
+                PlayerCount = 2
+            };
+
+            if (region != null)
+            {
+                var settings = PhotonAppSettings.Global.AppSettings.GetCopy();
+                settings.FixedRegion = region;
+                args.CustomPhotonAppSettings = settings;
+            }
+
+            return runner.StartGame(args);
+        }
+
+        private async Task DisposeRunner(NetworkRunner runner)
+        {
+            if (_runner == runner)
+            {
+                _runner = null;
+            }
+
+            if (runner == null)
+            {
+                return;
+            }
+
+            await runner.Shutdown(false);
+
+            if (runner != null)
+            {
+                Destroy(runner.gameObject);
             }
         }
 
@@ -87,16 +174,7 @@ namespace Assets.Scripts
             IsReady = false;
 
             ConnectionRejected?.Invoke(message);
-
-            if (runner != null)
-            {
-                await runner.Shutdown(false);
-            }
-
-            if (runner != null)
-            {
-                Destroy(runner.gameObject);
-            }
+            await DisposeRunner(runner);
         }
 
         private void Update()
@@ -170,7 +248,7 @@ namespace Assets.Scripts
 
         public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
         {
-            if (runner != _runner)
+            if (runner != _runner || _searching)
             {
                 return;
             }
@@ -182,17 +260,6 @@ namespace Assets.Scripts
                 {
                     RejectConnection("A game is already running. Join it instead.");
                     return;
-                }
-
-                if (_role == SessionRole.Joiner && runner.IsSharedModeMasterClient)
-                {
-                    RejectConnection("No game found. Ask Player 1 to start a game first.");
-                    return;
-                }
-
-                if (_role == SessionRole.Joiner)
-                {
-                    StatusChanged?.Invoke("Joined. Waiting for the game to start...");
                 }
             }
 
@@ -353,10 +420,25 @@ namespace Assets.Scripts
         }
 
         public void OnConnectedToServer(NetworkRunner runner) { }
-        public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) => StatusChanged?.Invoke($"Connection failed: {reason}");
+        public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason)
+        {
+            if (runner == _runner && !_searching)
+            {
+                StatusChanged?.Invoke($"Connection failed: {reason}");
+            }
+        }
+
         public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
         public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) { }
-        public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) => StatusChanged?.Invoke($"Disconnected: {reason}");
+
+        public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
+        {
+            if (runner == _runner && !_searching)
+            {
+                StatusChanged?.Invoke($"Disconnected: {reason}");
+            }
+        }
+
         public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
         public void OnInput(NetworkRunner runner, NetworkInput input) { }
         public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
@@ -368,7 +450,7 @@ namespace Assets.Scripts
         public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList) { }
         public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
         {
-            if (runner == _runner)
+            if (runner == _runner && !_searching)
             {
                 StatusChanged?.Invoke($"Session ended: {shutdownReason}");
             }

@@ -2,7 +2,6 @@ using Meta.XR.BuildingBlocks.AIBlocks;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using TMPro;
 using UnityEngine;
 
@@ -46,22 +45,21 @@ Always provide only a task and nothing else.";
         _llmAgent.SendPromptAsync(prompt);
     }
 
-    public void OnResponseReceived()
+    public void OnResponseReceived(string response)
     {
-        var lastResponse = _llmAgent.History.LastOrDefault();
-        if (lastResponse == null)
+        if (string.IsNullOrWhiteSpace(response))
         {
             return;
         }
 
-        var jsonTask = lastResponse.Replace("Assistant:", "");
+        var jsonTask = response.Replace("Assistant:", "");
 
         // The model sometimes wraps the JSON in a markdown code fence or adds text around it.
         var start = jsonTask.IndexOf('{');
         var end = jsonTask.LastIndexOf('}');
         if (start < 0 || end < start)
         {
-            Debug.LogError($"No JSON task found in the response: {lastResponse}");
+            Debug.LogError($"No JSON task found in the response: {response}");
             return;
         }
 

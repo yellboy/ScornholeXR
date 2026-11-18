@@ -174,15 +174,6 @@ namespace Assets.Scripts
             BroadcastSnapshot();
         }
 
-        public void StartRound()
-        {
-            if (_multiplayerSession.IsAuthority && _multiplayerSession.IsReady && _roundNumber == 0)
-            {
-                _roundNumber = 1;
-                BeginRound();
-            }
-        }
-
         private void BeginRound()
         {
             _playerOneRound = null;

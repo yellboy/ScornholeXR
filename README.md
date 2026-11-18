@@ -1,6 +1,6 @@
 # ScornholeXR
 
-A two-player XR bag-toss game for Meta Quest, inspired by the Scornhole format from *Good Mythical Morning*. Choose an answer, throw its numbered bag, and combine a good guess with a good shot.
+A two-player XR bag-toss game for Meta VR Glasses and Meta Quest, inspired by the Scornhole format from *Good Mythical Morning*. Choose an answer, throw its numbered bag, and combine a good guess with a good shot.
 
 Each round presents an AI-generated question with five answers ranked from least to most popular. Less popular answers are worth more points, and hitting the hole earns a bonus. The player with the highest total after the final round wins.
 

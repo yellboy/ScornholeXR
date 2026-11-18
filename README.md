@@ -6,6 +6,8 @@ Each round presents an AI-generated question with five answers ranked from least
 
 **[Read the game rules](RULES.md)** for scoring, turns, and match settings.
 
+For information about data handling and privacy requests, see the [Privacy Policy](PRIVACY.md).
+
 ## Features
 
 - Two-player online matches using Photon Fusion Shared Mode.

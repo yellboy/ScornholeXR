@@ -7,6 +7,34 @@ TagManager:
   - Board
   - Hole
   - Floor
+  - QDSUISection
+  - QDSUIAccentColor
+  - QDSUISecondaryButton
+  - QDSUIBackplate
+  - QDSUIBackplateGradient
+  - QDSUIBorderlessButton
+  - QDSUIIcon
+  - QDSUISharedThemeColor
+  - QDSUIToggleButton
+  - QDSUITextSecondaryColor
+  - QDSUITooltip
+  - QDSUIToggleBorderlessButton
+  - Cornbag
+  - Locomotion
+  - LocoButton
+  - LocoText
+  - PassThroughButton
+  - PassThrough
+  - QDSUILineDrawing
+  - QDSUITextInputField
+  - QDSUIDestructiveButton
+  - QDSUITextInvertedColor
+  - QDSUITextSecondaryInvertedColor
+  - QDSUIPrimaryButton
+  - QDSUIToggleSwitch
+  - QDSUIToggleCheckboxRadio
+  - QDSUIToggleThumbnail
+  - SamplesInfoPanel
   layers:
   - Default
   - TransparentFX

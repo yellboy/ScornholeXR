@@ -12,6 +12,10 @@ PrefabInstance:
       propertyPath: _index
       value: 4
       objectReference: {fileID: 0}
+    - target: {fileID: 921600455217196045, guid: db0760d5105aee94c90599840f01258b, type: 3}
+      propertyPath: SortKey
+      value: 2907207196
+      objectReference: {fileID: 0}
     - target: {fileID: 6771240181754328735, guid: db0760d5105aee94c90599840f01258b, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -55,6 +59,10 @@ PrefabInstance:
     - target: {fileID: 7466696114328803530, guid: db0760d5105aee94c90599840f01258b, type: 3}
       propertyPath: m_Name
       value: Cornbag yellow
+      objectReference: {fileID: 0}
+    - target: {fileID: 7604690895888940452, guid: db0760d5105aee94c90599840f01258b, type: 3}
+      propertyPath: SortKey
+      value: 2687304753
       objectReference: {fileID: 0}
     - target: {fileID: 8365032737922094542, guid: db0760d5105aee94c90599840f01258b, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'

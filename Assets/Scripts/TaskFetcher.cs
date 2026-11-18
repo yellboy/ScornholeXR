@@ -1,8 +1,9 @@
 using Meta.XR.BuildingBlocks.AIBlocks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.IO;
 using TMPro;
 using UnityEngine;
 
@@ -14,11 +15,6 @@ public class TaskFetcher : MonoBehaviour
     private IList<TaskObject> _previousTasks = new List<TaskObject>();
 
     public Action<TaskObject> TaskReceived;
-
-    private void Start()
-    {
-        FetchTask();
-    }
 
     public void FetchTask()
     {
@@ -51,16 +47,34 @@ Always provide only a task and nothing else.";
         _llmAgent.SendPromptAsync(prompt);
     }
 
-    public void OnResponseReceived()
+    public void OnResponseReceived(string response)
     {
-        var lastResponse = _llmAgent.History.LastOrDefault();
-        if (lastResponse == null)
+        if (string.IsNullOrWhiteSpace(response))
         {
             return;
         }
 
-        var jsonTask = lastResponse.Replace("Assistant:", "");
-        var task = JsonConvert.DeserializeObject<TaskObject>(jsonTask);
+        var jsonTask = response.Replace("Assistant:", "");
+
+        // The response can contain a code fence, extra text, or more than one JSON object; only the first object is the task.
+        var start = jsonTask.IndexOf('{');
+        if (start < 0)
+        {
+            Debug.LogError($"No JSON task found in the response: {response}");
+            return;
+        }
+
+        TaskObject task;
+        try
+        {
+            using var reader = new JsonTextReader(new StringReader(jsonTask.Substring(start)));
+            task = JObject.Load(reader).ToObject<TaskObject>();
+        }
+        catch (JsonException exception)
+        {
+            Debug.LogError($"Could not parse the task ({exception.Message}). Response: {response}");
+            return;
+        }
 
         _previousTasks.Add(task);
 

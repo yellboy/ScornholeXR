@@ -1,32 +1,129 @@
-﻿using UnityEngine;
+﻿using System.Collections;
+using UnityEngine;
 
 namespace Assets.Scripts
 {
     public class GameController : MonoBehaviour
     {
+        private const int DefaultThrowsPerPlayer = 5;
+        private const int DefaultTotalRounds = 5;
+        private const float RoundResultsDuration = 5f;
+
         [SerializeField] private TaskFetcher _taskFetcher;
         [SerializeField] private MainDisplay _mainDisplay;
         [SerializeField] private CornbagsController _cornbagsController;
+        [SerializeField] private GameMenu _gameMenu;
 
-        private Round _currentRound;
-        private int _totalPoints = 0;
+        private MultiplayerSession _multiplayerSession;
+        private int _throwsPerPlayer = DefaultThrowsPerPlayer;
+        private int _totalRounds = DefaultTotalRounds;
+        private Round _playerOneRound;
+        private Round _playerTwoRound;
+        private int _roundNumber;
+        private int _appliedRoundNumber;
+        private int _activePlayer;
+        private int _playerOneTotalPoints;
+        private int _playerTwoTotalPoints;
+
+        private void Awake()
+        {
+            _multiplayerSession = GetComponent<MultiplayerSession>();
+            if (_multiplayerSession == null)
+            {
+                _multiplayerSession = gameObject.AddComponent<MultiplayerSession>();
+            }
+        }
 
         private void OnEnable()
         {
             _taskFetcher.TaskReceived += OnTaskReceived;
             _cornbagsController.Thrown += OnCornbagThrown;
+            _multiplayerSession.SessionReady += OnSessionReady;
+            _multiplayerSession.ThrowReceived += OnNetworkThrowReceived;
+            _multiplayerSession.SnapshotReceived += ApplySnapshot;
+            _multiplayerSession.StatusChanged += OnStatusChanged;
+            _multiplayerSession.ConnectionRejected += OnConnectionRejected;
+
+            if (_gameMenu != null)
+            {
+                _gameMenu.StartGameRequested += OnStartGameRequested;
+                _gameMenu.JoinGameRequested += OnJoinGameRequested;
+            }
         }
 
         private void OnDisable()
         {
             _taskFetcher.TaskReceived -= OnTaskReceived;
             _cornbagsController.Thrown -= OnCornbagThrown;
+            _multiplayerSession.SessionReady -= OnSessionReady;
+            _multiplayerSession.ThrowReceived -= OnNetworkThrowReceived;
+            _multiplayerSession.SnapshotReceived -= ApplySnapshot;
+            _multiplayerSession.StatusChanged -= OnStatusChanged;
+            _multiplayerSession.ConnectionRejected -= OnConnectionRejected;
+
+            if (_gameMenu != null)
+            {
+                _gameMenu.StartGameRequested -= OnStartGameRequested;
+                _gameMenu.JoinGameRequested -= OnJoinGameRequested;
+            }
+        }
+
+        private void Start()
+        {
+            _cornbagsController.SetThrowingEnabled(false);
+            _mainDisplay.ShowStatus(string.Empty);
+
+            if (_gameMenu == null)
+            {
+                Debug.LogError("GameMenu is not assigned on the GameController.");
+            }
+        }
+
+        private void OnStartGameRequested(int totalRounds, int throwsPerPlayer)
+        {
+            _totalRounds = totalRounds;
+            _throwsPerPlayer = throwsPerPlayer;
+            _multiplayerSession.Connect(SessionRole.Host);
+        }
+
+        private void OnJoinGameRequested()
+        {
+            _multiplayerSession.Connect(SessionRole.Joiner);
+        }
+
+        private void OnConnectionRejected(string message)
+        {
+            _cornbagsController.SetThrowingEnabled(false);
+            _mainDisplay.ShowStatus(string.Empty);
+
+            if (_gameMenu != null)
+            {
+                _gameMenu.Show(message);
+            }
+        }
+
+        private void OnSessionReady()
+        {
+            if (!_multiplayerSession.IsAuthority || _roundNumber != 0)
+            {
+                return;
+            }
+
+            _roundNumber = 1;
+            BeginRound();
         }
 
         private void OnTaskReceived(TaskObject taskObject)
         {
-            _currentRound = new Round(taskObject);
-            _mainDisplay.ShowTask(taskObject);
+            if (!_multiplayerSession.IsAuthority)
+            {
+                return;
+            }
+
+            _playerOneRound = new Round(taskObject);
+            _playerTwoRound = new Round(taskObject);
+            _activePlayer = 1;
+            BroadcastSnapshot();
         }
 
         private void OnCornbagThrown(Cornbag cornbag)
@@ -37,27 +134,137 @@ namespace Assets.Scripts
                 return;
             }
 
-            _currentRound.ThrowMade(cornbag.Index, cornbag.Result.Value);
-            EndRoundIfNeeded();
+            _multiplayerSession.SubmitThrow(cornbag.Index, cornbag.Result.Value);
+            _cornbagsController.SetThrowingEnabled(false);
         }
 
-        private void EndRoundIfNeeded()
+        private void OnNetworkThrowReceived(int player, int option, ThrowResult result)
         {
-            if (_currentRound.ThrowCount < 5)
+            if (!_multiplayerSession.IsAuthority)
             {
                 return;
             }
 
-            _totalPoints += _currentRound.Points;
-            _mainDisplay.ShowRoundPoints(_currentRound.Points);
-            _mainDisplay.UpdateTotalPoints(_totalPoints);
-            _mainDisplay.ShowAnswer(_currentRound.Task);
+            if (player != _activePlayer || _playerOneRound == null || _playerTwoRound == null)
+            {
+                Debug.LogWarning(
+                    $"Throw rejected: player={player}, active={_activePlayer}, roundReady={_playerOneRound != null && _playerTwoRound != null}");
+                return;
+            }
+
+            var playerRound = player == 1 ? _playerOneRound : _playerTwoRound;
+            if (playerRound.ThrowCount >= _throwsPerPlayer)
+            {
+                Debug.LogWarning($"Throw rejected: player {player} already made {_throwsPerPlayer} throws");
+                return;
+            }
+
+            playerRound.ThrowMade(option, result);
+
+            if (_playerOneRound.ThrowCount >= _throwsPerPlayer &&
+                _playerTwoRound.ThrowCount >= _throwsPerPlayer)
+            {
+                EndRound();
+                return;
+            }
+
+            var otherPlayer = player == 1 ? 2 : 1;
+            var otherRound = otherPlayer == 1 ? _playerOneRound : _playerTwoRound;
+            _activePlayer = otherRound.ThrowCount < _throwsPerPlayer ? otherPlayer : player;
+            BroadcastSnapshot();
         }
 
-        public void StartRound()
+        private void BeginRound()
         {
+            _playerOneRound = null;
+            _playerTwoRound = null;
+            _activePlayer = 0;
             _cornbagsController.Reset();
+            _mainDisplay.ShowStatus($"Loading round {_roundNumber}...");
             _taskFetcher.FetchTask();
+        }
+
+        private void EndRound()
+        {
+            _playerOneTotalPoints += _playerOneRound.Points;
+            _playerTwoTotalPoints += _playerTwoRound.Points;
+            _activePlayer = 0;
+
+            var gameComplete = _roundNumber >= _totalRounds;
+            BroadcastSnapshot(true, gameComplete);
+
+            if (!gameComplete)
+            {
+                StartCoroutine(StartNextRoundAfterDelay());
+            }
+        }
+
+        private IEnumerator StartNextRoundAfterDelay()
+        {
+            yield return new WaitForSeconds(RoundResultsDuration);
+            _roundNumber++;
+            BeginRound();
+        }
+
+        private void BroadcastSnapshot(bool roundComplete = false, bool gameComplete = false)
+        {
+            var snapshot = new GameSnapshot
+            {
+                RoundNumber = _roundNumber,
+                TotalRounds = _totalRounds,
+                ThrowsPerPlayer = _throwsPerPlayer,
+                ActivePlayer = _activePlayer,
+                PlayerOneThrows = _playerOneRound?.ThrowCount ?? 0,
+                PlayerTwoThrows = _playerTwoRound?.ThrowCount ?? 0,
+                PlayerOneRoundPoints = _playerOneRound?.Points ?? 0,
+                PlayerTwoRoundPoints = _playerTwoRound?.Points ?? 0,
+                PlayerOneTotalPoints = _playerOneTotalPoints,
+                PlayerTwoTotalPoints = _playerTwoTotalPoints,
+                RoundComplete = roundComplete,
+                GameComplete = gameComplete,
+                Task = _playerOneRound?.Task
+            };
+
+            _multiplayerSession.BroadcastSnapshot(
+                _multiplayerSession.CreateSnapshotWithPlayerRefs(snapshot));
+        }
+
+        private void ApplySnapshot(GameSnapshot snapshot)
+        {
+            _cornbagsController.StartNetworkedSession(_multiplayerSession.Runner);
+
+            if (snapshot.RoundComplete)
+            {
+                _cornbagsController.Reset();
+            }
+            else if (snapshot.RoundNumber != _appliedRoundNumber)
+            {
+                _appliedRoundNumber = snapshot.RoundNumber;
+                _cornbagsController.Reset();
+            }
+
+            var canThrow = !snapshot.RoundComplete &&
+                snapshot.ActivePlayer == _multiplayerSession.LocalPlayerNumber;
+            _cornbagsController.SetThrowingEnabled(canThrow);
+
+            if (snapshot.GameComplete)
+            {
+                _mainDisplay.ShowGameResults(snapshot);
+            }
+            else if (snapshot.RoundComplete)
+            {
+                _mainDisplay.ShowRoundResults(snapshot);
+            }
+            else if (snapshot.Task != null)
+            {
+                _mainDisplay.ShowGameState(snapshot, _multiplayerSession.LocalPlayerNumber);
+            }
+        }
+
+        private void OnStatusChanged(string status)
+        {
+            _cornbagsController.SetThrowingEnabled(false);
+            _mainDisplay.ShowStatus(status);
         }
     }
 }

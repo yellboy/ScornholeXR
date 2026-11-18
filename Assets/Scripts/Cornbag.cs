@@ -15,8 +15,15 @@ namespace Assets.Scripts
         public event Action<Cornbag> Thrown;
 
         public int Index => _index;
+        public bool IsResolved => _resolved;
 
         public ThrowResult? Result { get; private set; }
+
+        public void ApplyNetworkResult(ThrowResult result)
+        {
+            Result = result;
+            _resolved = true;
+        }
 
         private void FixedUpdate()
         {

@@ -1,7 +1,9 @@
 using Meta.XR.BuildingBlocks.AIBlocks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using TMPro;
 using UnityEngine;
 
@@ -54,17 +56,25 @@ Always provide only a task and nothing else.";
 
         var jsonTask = response.Replace("Assistant:", "");
 
-        // The model sometimes wraps the JSON in a markdown code fence or adds text around it.
+        // The response can contain a code fence, extra text, or more than one JSON object; only the first object is the task.
         var start = jsonTask.IndexOf('{');
-        var end = jsonTask.LastIndexOf('}');
-        if (start < 0 || end < start)
+        if (start < 0)
         {
             Debug.LogError($"No JSON task found in the response: {response}");
             return;
         }
 
-        jsonTask = jsonTask.Substring(start, end - start + 1);
-        var task = JsonConvert.DeserializeObject<TaskObject>(jsonTask);
+        TaskObject task;
+        try
+        {
+            using var reader = new JsonTextReader(new StringReader(jsonTask.Substring(start)));
+            task = JObject.Load(reader).ToObject<TaskObject>();
+        }
+        catch (JsonException exception)
+        {
+            Debug.LogError($"Could not parse the task ({exception.Message}). Response: {response}");
+            return;
+        }
 
         _previousTasks.Add(task);
 
